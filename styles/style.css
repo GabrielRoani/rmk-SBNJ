@@ -119,6 +119,10 @@ ol {
     padding: 0;
 }
 
+#tabela .btn-categoria-wrap {
+    margin: 3px;
+}
+
 #preview-carta-preta {
     display: block;
     position: absolute;
