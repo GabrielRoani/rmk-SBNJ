@@ -1,4 +1,4 @@
-![Logo cartas radioativas](/imgs/icones/radioativo-preto.png)
+![Logo cartas radioativas](imgs/favicons/android-chrome-192x192.png)
 # Cartas Radioativas
 
 http://cartasradioativas.epizy.com/
