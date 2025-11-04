@@ -1,51 +1,54 @@
-// js/script.js (Refatorado para filtro único de expansão)
+// js/script.js (Versão limpa e funcional)
 
 var impressao = {
-    cont: 1,
-    acumulador: 1,
     cor: null,
     verso: "padrao",
     tamanho: "padrao",
     textoPers: "Se beber, Não jogue!",
-    expansoes: {} // Apenas expansões
+    expansoes: {}
 };
-var dbCartas = []; // Array plano de cartas
+var dbCartas = []; // Será populado por pegaDadosBD()
 var filtrosAtivos = {
-    expansoes: [] // Apenas expansões
+    expansoes: []
 };
 
+// Carrega o jsPDF do window
 const { jsPDF } = window.jspdf;
 
-$(document).ready(() => {
-    $("#modal-aguarde").modal('show');
+// Dispara quando o HTML estiver pronto (mais rápido que o window.load)
+$(document).ready(function () {
     pegaDadosBD();
 });
 
 function pegaDadosBD() {
-    // 1. Carrega Expansões
+    // 1. Carrega Expansões da variável 'localExpansoesDB' (definida em cartas-db.js)
     for (const key in localExpansoesDB) {
         impressao.expansoes[key] = localExpansoesDB[key];
     }
-    adicionaExpansoes();
+    adicionaExpansoes(); // Cria os botões de expansão
 
-    // 2. Carrega Cartas
+    // 2. Carrega Cartas da variável 'localCartasDB' (definida em cartas-db.js)
     dbCartas = localCartasDB;
     
-    $("#modal-aguarde").modal('hide');
-    // Seleciona todas as expansões por padrão
-    $("#botoes-expansoes .btn-check").prop("checked", true);
-    
+    // 3. Atualiza a tabela (agora que os botões e os dados existem)
     atualizaFiltroCartas();
+
+    // 4. Seleciona todas as cartas carregadas por padrão
+    selecionaTodas();
 }
 
 // Adiciona botões de expansão
 function adicionaExpansoes() {
     for (key in impressao.expansoes) {
         const icone = impressao.expansoes[key];
+        
+        // CORRIGIDO: A contagem agora funciona pois as chaves batem (ex: "JOGO BASE" === "JOGO BASE")
         const count = localCartasDB.filter(c => c.expansao === key).length;
+        
+        // CORRIGIDO: Adiciona 'checked' diretamente no HTML para evitar "race conditions"
         $("#botoes-expansoes").append(
             `<div class="btn-categoria-wrap">
-				<input type="checkbox" class="btn-check btn-filtro" id="btn-exp-${normaliza(key)}" autocomplete="off" value="${key}">
+				<input type="checkbox" class="btn-check btn-filtro" id="btn-exp-${normaliza(key)}" autocomplete="off" value="${key}" checked> 
 				<label class="btn btn-outline-secondary" for="btn-exp-${normaliza(key)}">${icone?'<img src="./imgs/icones/' + icone + '-preto.png" width="30" height="30" class="align-text-bottom me-2" imagem="' + icone + '">':''}${key} <span class="badge bg-dark qtd ms-1">${count}</span></label>
 			</div>`
         );
@@ -61,14 +64,14 @@ $(document).on("change", ".btn-filtro", (e) => {
     atualizaFiltroCartas();
 });
 
-// Lógica de filtro (simplificada)
+// Lógica de filtro
 function atualizaFiltroCartas() {
     $("#corpo-tabela-desafios").empty();
     
     // Obtém filtros de expansão ativos
     filtrosAtivos.expansoes = $("#botoes-expansoes .btn-filtro:checked").map(function() { return $(this).val(); }).get();
 
-    // Filtra o DB de cartas
+    // Filtra o DB de cartas (agora funciona pois os nomes batem)
     const cartasFiltradas = dbCartas.filter(carta => {
         return filtrosAtivos.expansoes.includes(carta.expansao);
     });
@@ -76,14 +79,15 @@ function atualizaFiltroCartas() {
     // Constrói e insere o HTML da tabela
     let cartasHTML = "";
     cartasFiltradas.forEach(carta => {
-        cartasHTML += novaLinhaTabela(carta);
+        cartasHTML += novaLinhaTabela(carta, false); // Inicia desmarcado
     });
     $("#corpo-tabela-desafios").append(cartasHTML);
     
-    atualizaQtd();
+    atualizaQtd(); // Atualiza a contagem total
+    selecionaTodas(); // Marca todas as cartas filtradas
 }
 
-// Formata a linha da tabela (com novos atributos)
+// Formata a linha da tabela
 function novaLinhaTabela(carta, marcado) {
     return `<tr class="${marcado ? "marcado" : ""}" 
                 tipo="${carta.tipo}" 
@@ -100,9 +104,17 @@ function novaLinhaTabela(carta, marcado) {
             `;
 }
 
+// --- Funções de Interação com a Tabela ---
+
 $("tbody").on("click", "tr", function (e) {
 	let dados = $(e.currentTarget);
 	marca(dados);
+});
+
+$("tbody").on("click", ".btn-remover", function (e) {
+    e.stopPropagation(); 
+	$(e.currentTarget).parents("tr").remove();
+    atualizaQtd();
 });
 
 function marca(e) {
@@ -111,13 +123,33 @@ function marca(e) {
 }
 
 function atualizaQtd() {
+    // Atualiza o contador "Total"
 	$(".qtd-desafios > .qtd-total").text($("#corpo-tabela-desafios > tr").length);
+    // Atualiza o contador "Selecionadas"
 	$(".qtd-desafios > .qtd-selec").text(
 		$("#corpo-tabela-desafios > .marcado").length
 	);
 }
 
-// Adiciona cartas personalizadas
+function selecionaTodas() {
+	$.each(
+		$("#corpo-tabela-desafios")
+			.children("tr")
+			.not(".marcado"), // Pega só as que não estão marcadas
+		(i, v) => {
+			marca($(v)); // Marca elas
+		}
+	);
+}
+
+function desselecionaTodas() {
+	$.each($("#corpo-tabela-desafios").children("tr.marcado"), (i, v) => {
+		marca($(v)); // Desmarca
+	});
+}
+
+// --- Adicionar Cartas Personalizadas ---
+
 async function adicionaDesafioPersonalizado() {
 	if (!$("#texto-personalizacao-desafios").val()){
 		Swal.fire({ 
@@ -128,7 +160,6 @@ async function adicionaDesafioPersonalizado() {
         return;
 	}
     
-    // PERGUNTA O TIPO DE CARTA (CABEÇALHO)
     const { value: tipoCarta } = await Swal.fire({
         title: 'Tipo da Carta',
         input: 'text',
@@ -142,30 +173,26 @@ async function adicionaDesafioPersonalizado() {
         }
     });
 
-    // Se o usuário inseriu um tipo
     if (tipoCarta) {
 		let campo = $("#texto-personalizacao-desafios");
 		let textos = campo.val().split("\n");
 	
-		textosCorrigidos = textos.map((texto) => {
-			return texto.replace(!/[()\w+]/g, "");
-		});
+        // Filtra linhas vazias
+		textosCorrigidos = textos.filter(texto => texto.trim() !== "");
 	
-        // Adiciona as cartas com o tipo definido
 		adicionaCartaNaTabela(textosCorrigidos, 'p', tipoCarta.toUpperCase()); 
 		campo.val("");
     }
 }
 
-// Adiciona as cartas personalizadas na tabela
 function adicionaCartaNaTabela(textos, tipo, tipoCarta) {
 	let items = "";
 	for (key in textos) {
         const carta = {
             texto: textos[key],
-            tipo: tipo, // Cor padrão
-            tipoCarta: tipoCarta, // Cabeçalho
-            expansao: 'PERSONALIZADO' // Rodapé
+            tipo: tipo,
+            tipoCarta: tipoCarta,
+            expansao: 'PERSONALIZADO' // Expansão especial para cartas do usuário
         };
 		items = items + novaLinhaTabela(carta, true); // 'true' para já vir marcado
 	}
@@ -173,29 +200,8 @@ function adicionaCartaNaTabela(textos, tipo, tipoCarta) {
 	atualizaQtd();
 }
 
-$("tbody").on("click", ".btn-remover", function (e) {
-	$(e.currentTarget).parents("tr").remove();
-    atualizaQtd();
-});
 
-function selecionaTodas() {
-	$.each(
-		$("#corpo-tabela-desafios")
-			.children("tr")
-			.not(".marcado"),
-		(i, v) => {
-			marca($(v));
-		}
-	);
-}
-
-function desselecionaTodas() {
-	$.each($("#corpo-tabela-desafios").children("tr.marcado"), (i, v) => {
-		marca($(v));
-	});
-}
-
-// --- Funções de personalização e PDF ---
+// --- Funções de Personalização e PDF ---
 
 $("#cor-fundo").change((e) => {
 	impressao.cor = $(e.currentTarget).val();
@@ -212,7 +218,6 @@ $("#tamanho-carta .form-check-input").on("change", () => {
 	impressao.tamanho = $("input[name=tamanho-carta]:checked").val();
 });
 
-// Atualiza o exemplo de carta
 function trocaCorPreta() {
     const cor = impressao.cor || '#000';
 	if (impressao.verso == "padrao") {
@@ -228,16 +233,10 @@ function trocaCorPreta() {
 
 $("#texto-rodape").on("input", (e) => {
 	impressao.textoPers = $(e.currentTarget).val() || "Se beber, Não jogue!";
-    // Atualiza o texto do verso no exemplo
-	$(".fundo-carta-logo .texto-cartas").html(impressao.textoPers.split(' ').join('<br />'));
+    $(".fundo-carta-logo .texto-cartas").html(impressao.textoPers.split(' ').join('<br />'));
 });
 
-// Função de salvar desativada
-function salvaCartasBD() {
-    console.log("Modo estático: A função 'salvaCartasBD' foi ignorada.");
-}
-
-// Gerar PDF (agora verifica 'expansao' para personalizadas)
+// Gerar PDF
 function gerarPDF() {
 	if ($("tr.marcado").length == 0) {
 		Swal.fire({
@@ -247,33 +246,18 @@ function gerarPDF() {
 		});
 		return;
 	}
+    // Mostra o modal de "Aguarde" ANTES de começar o processamento pesado
+    $("#modal-aguarde").modal('show');
 
-	if ($("tr[expansao='PERSONALIZADO']").length > 0) {
-		Swal.fire({
-			title: "Gerar PDF com cartas personalizadas?",
-			html: 'As suas cartas personalizadas serão incluídas neste PDF.<br><span class="fs-6 text-black-50"><em>(A opção de salvar cartas está desativada no modo estático.)</em></span>',
-			icon: "question",
-			showCancelButton: true,
-			confirmButtonText: `Gerar PDF`,
-			cancelButtonText: `Cancelar`,
-		}).then((result) => {
-			if (result.isConfirmed) {
-				montaPDF();
-			} else if (result.isDismissed) {
-				return;
-			}
-		});
-	} else {
-		montaPDF();
-	}
+    // Usa um setTimeout de 10ms para dar tempo do modal aparecer na tela
+    // antes que o processador seja bloqueado pela geração do PDF.
+    setTimeout(() => {
+        montaPDF();
+        $("#modal-aguarde").modal('hide'); // Esconde o modal quando terminar
+    }, 10);
 }
 
-// Formulário de mensagem desativado
-$("#mensagem").on("submit", function (e) {
-	e.preventDefault();
-    Swal.fire({ 
-        icon: 'error',
-        title: 'Função desativada',
-        text: 'O formulário de mensagem não funciona no modo estático (sem servidor).'
-    });
-});
+// --- Funções de BD e Mensagens (Removidas/Desativadas) ---
+
+// function salvaCartasBD() { ... } // Removido
+// $("#mensagem").on("submit", ...) // Removido

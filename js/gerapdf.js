@@ -1,4 +1,4 @@
-// js/gerapdf.js (Refatorado para o novo layout de carta)
+// js/gerapdf.js (Com a correção do typo 'larga' -> 'largura')
 
 function montaPDF() {
 	$("#modal-aguarde").modal('show');
@@ -42,7 +42,7 @@ function montaPDF() {
 
 		if (cartasNaPagina > config.cartasPorPagina || i === cartasPDF.length - 1) {
 			desenhaLinhasCorte(doc, config);
-			if (i < cartasPDF.length - 1) {
+			if (i < cartasPDF.length - 1) { 
 				doc.addPage();
 				pagina++;
 				cartasNaPagina = 1;
@@ -87,8 +87,6 @@ function getConfig() {
 
 // Define esquemas de cores para cada tipo de carta
 function getCorPorTipo(tipo, config) {
-    // Defina seus esquemas de cores aqui
-    // 'headerFundo' é a cor do cabeçalho, 'headerTexto' a cor do texto do cabeçalho
     const cores = {
         'p': { fundo: '#212529', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#212529', icone: "-branco" }, // Preto
         'v': { fundo: '#DC3545', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#DC3545', icone: "-branco" }, // Vermelho (Regra)
@@ -97,15 +95,13 @@ function getCorPorTipo(tipo, config) {
         'r': { fundo: '#6610F2', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#6610F2', icone: "-branco" }, // Roxo (Castigo)
         'b': { fundo: '#FFFFFF', texto: '#000000', headerFundo: '#212529', headerTexto: '#FFFFFF', icone: "-preto" }   // Carta Branca
     };
-    // Retorna a cor do 'tipo' ou a cor personalizada do usuário (antigo 'p')
     const corPadraoUsuario = { fundo: config.corPadrao, texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: config.corPadrao, icone: "-branco" };
     
-    // Se o tipo for 'p' (padrão preto), mas o usuário escolheu uma cor, use a cor do usuário
     if (tipo === 'p' && config.corPadrao !== "#000000") {
         return corPadraoUsuario;
     }
     
-    return cores[tipo] || corPadraoUsuario; // Retorna a cor do tipo ou a cor padrão
+    return cores[tipo] || corPadraoUsuario; 
 }
 
 
@@ -120,52 +116,43 @@ function calculaPosicao(num, config) {
 	};
 }
 
-// **** FUNÇÃO PRINCIPAL MODIFICADA (desenhaFrente) ****
 function desenhaFrente(doc, carta, x, y, config, corInfo) {
-    const alturaCabecalho = 10; // Altura do cabeçalho em mm
-    const margemTexto = 4; // Margem interna
+    const alturaCabecalho = 10; 
+    const margemTexto = 4; 
     
-    // 1. Desenha o fundo principal
 	doc.setDrawColor(0);
 	doc.setFillColor(corInfo.fundo);
 	doc.rect(x, y, config.largura, config.altura, impressao.verso === 'padrao' ? 'F' : 'D');
 	
-    // 2. Desenha o fundo do Cabeçalho
     doc.setFillColor(corInfo.headerFundo);
     doc.rect(x, y, config.largura, alturaCabecalho, 'F');
 
-    // 3. Desenha o Texto do Cabeçalho (ex: "DESAFIO")
     doc.setFont("calibri", "bold");
     doc.setFontSize(10);
     doc.setTextColor(corInfo.headerTexto);
     doc.text(carta.tipoCarta.toUpperCase(), x + (config.largura / 2), y + (alturaCabecalho / 2) + 2, { align: 'center' });
 
-    // 4. Desenha o Texto Principal (o desafio)
 	doc.setFont("calibri", "normal");
     doc.setFontSize(config.fontSize);
 	doc.setTextColor(corInfo.texto);
 	let textoFormatado = formataTexto(carta.texto, doc, config.largura - (margemTexto * 2));
     
-    // Posição Y do texto: 8mm abaixo do cabeçalho
     let posYTexto = y + alturaCabecalho + 8; 
 	doc.text(textoFormatado, x + (config.largura / 2), posYTexto, { align: 'center', maxWidth: config.largura - (margemTexto * 2) });
 
-	// 5. Desenha o Rodapé (Expansão)
 	doc.setFont("calibri", "bold");
     doc.setFontSize(7);
 	doc.text(carta.expansao.toUpperCase(), x + (config.largura / 2), y + config.altura - 4, { align: 'center' });
 
-    // 6. Desenha o Logo (Ícone do jogo) no canto
-    // Use o logo 'radioativo' como padrão
     const logoIconePath = `imgs/icones/radioativo${corInfo.icone}.png`; 
     try {
 	    doc.addImage(logoIconePath, "PNG", x + 2, y + config.altura - 6, 4, 4);
-    } catch (e) { } // ignora se o logo principal falhar
+    } catch (e) { } 
 }
 
 // Desenha o verso da carta
 function desenhaVerso(doc, tipo, x, y, config, corInfo) {
-    const icone = `imgs/icones/radioativo${corInfo.icone}.png`; // Logo padrão no verso
+    const icone = `imgs/icones/radioativo${corInfo.icone}.png`; 
     
     doc.setDrawColor(0);
 
@@ -174,15 +161,15 @@ function desenhaVerso(doc, tipo, x, y, config, corInfo) {
         doc.rect(x, y, config.largura, config.altura, 'F');
     } else {
         doc.setFillColor(corInfo.fundo);
-        doc.rect(x, y, config.largura, 5, 'F'); // Faixa superior
-        doc.rect(x, y + config.altura - 5, config.largura, 5, 'F'); // Faixa inferior
-        doc.rect(x, y, 5, config.altura, 'F'); // Faixa esquerda
-        doc.rect(x + config.larga - 5, y, 5, config.altura, 'F'); // Faixa direita
+        doc.rect(x, y, config.largura, 5, 'F'); 
+        doc.rect(x, y + config.altura - 5, config.largura, 5, 'F'); 
+        doc.rect(x, y, 5, config.altura, 'F'); 
+        // ***** CORREÇÃO DE TYPO AQUI *****
+        doc.rect(x + config.largura - 5, y, 5, config.altura, 'F'); // Faixa direita
     }
 
     doc.setTextColor(corInfo.texto);
     doc.setFontSize(12);
-    // Usa o texto personalizado do usuário (ou o padrão)
     doc.text(config.textoPers.split(' ').join('\n'), x + (config.largura / 2), y + (config.altura / 2) - 5, { align: 'center' }); 
     try {
         doc.addImage(icone, "PNG", x + (config.largura / 2) - 7.5, y + (config.altura / 2) - 20, 15, 15);

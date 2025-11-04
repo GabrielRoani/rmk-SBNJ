@@ -1,9 +1,10 @@
 // 1. Lista de Expansões
 const localExpansoesDB = {
-    "Jogo Base": "radioativo",
-    "Eu Nunca...": "personalizado",
-    "Discórdia": "geek",
-    "Spice (Picante)": "18mais"
+    // CORRIGIDO: Os nomes das chaves agora batem com os valores "expansao" das cartas
+    "JOGO BASE": "radioativo",
+    "EU NUNCA...": "personalizado",
+    "DISCÓRDIA": "geek",
+    "SPICE": "18mais"
 };
 
 // 2. Banco de Dados de Cartas (LISTA ÚNICA E EXPANDIDA)
