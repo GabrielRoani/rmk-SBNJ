@@ -1,491 +1,228 @@
-var coordImpressao = {
-    padrao: {
-        corte: {
-            x: [10, 73.5, 137, 200.5],
-            y: [17, 105, 193, 281],
-        },
-        qtdCartas: 9,
-        tamanhoCarta: [63.5, 88],
-        margemCarta: [5, 10],
-        margemRodape: [2, 83],
-        tamanhoLogo: [5, 5],
-        tamanhoLogoVerso: [18, 18],
-        margemLogoVersoY: 15,
-        fonteCarta: 16,
-        fonteRodape: 11,
-        tamanhoFonte: 6, //mm
-        tamanhoFonteRodape: 2.2, //mm
-        correcaoRodape: 1.5,
-        sangria: 3,
-        1: [10, 17],
-        2: [73.5, 17],
-        3: [137, 17],
-        4: [10, 105],
-        5: [73.5, 105],
-        6: [137, 105],
-        7: [10, 193],
-        8: [73.5, 193],
-        9: [137, 193],
-    },
-    menor: {
-        corte: {
-            x: [23, 64, 105, 146, 187],
-            y: [23, 86, 149, 212, 275],
-        },
-        qtdCartas: 16,
-        tamanhoCarta: [41, 63],
-        margemCarta: [3, 6],
-        margemRodape: [1, 60],
-        tamanhoLogo: [4, 4],
-        tamanhoLogoVerso: [9, 9],
-        margemLogoVersoY: 11,
-        fonteCarta: 10,
-        fonteRodape: 7.5,
-        tamanhoFonte: 3, //mm
-        tamanhoFonteRodape: 1.5, //mm
-        correcaoRodape: 1.3,
-        sangria: 2,
-        1: [23, 23],
-        2: [64, 23],
-        3: [105, 23],
-        4: [146, 23],
-        5: [23, 86],
-        6: [64, 86],
-        7: [105, 86],
-        8: [146, 86],
-        9: [23, 149],
-        10: [64, 149],
-        11: [105, 149],
-        12: [146, 149],
-        13: [23, 212],
-        14: [64, 212],
-        15: [105, 212],
-        16: [146, 212],
-    },
-    controverso: {
-        corte: {
-            x: [21, 77, 133, 189],
-            y: [16, 69, 122, 175, 228, 281],
-        },
-        qtdCartas: 15,
-        tamanhoCarta: [56, 53],
-        margemCarta: [4, 7],
-        margemRodape: [1, 50],
-        tamanhoLogo: [4.5, 4.5],
-        tamanhoLogoVerso: [16, 16],
-        margemLogoVersoY: 15,
-        fonteCarta: 11,
-        fonteRodape: 9,
-        tamanhoFonte: 5, //mm
-        tamanhoFonteRodape: 1.8, //mm
-        correcaoRodape: 1.3,
-        sangria: 2,
-        1: [21, 16],
-        2: [77, 16],
-        3: [133, 16],
-        4: [21, 69],
-        5: [77, 69],
-        6: [133, 69],
-        7: [21, 122],
-        8: [77, 122],
-        9: [133, 122],
-        10: [21, 175],
-        11: [77, 175],
-        12: [133, 175],
-        13: [21, 228],
-        14: [77, 228],
-        15: [133, 228],
-    },
-};
+// js/gerapdf.js (Refatorado para o novo layout de carta)
 
-function emMM(tam, fontSize) {
-    return (tam * fontSize / (72 / 25.6));
+function montaPDF() {
+	$("#modal-aguarde").modal('show');
+
+	// 1. PEGAR TODAS AS CARTAS SELECIONADAS
+	let cartasPDF = [];
+	$.each($("tr.marcado"), (i, v) => {
+		cartasPDF.push({
+			texto: $(v).attr("texto"),
+			tipo: $(v).attr("tipo"),
+            tipoCarta: $(v).attr("tipoCarta"), // NOVO: Captura o Cabeçalho
+            expansao: $(v).attr("expansao") // NOVO: Captura o Rodapé
+		});
+	});
+
+	// 2. CONFIGURAÇÕES DE IMPRESSÃO
+	let doc = new jsPDF({ unit: "mm" });
+	doc.addFont("js/plugins/fonts/calibri.ttf", "calibri", "normal");
+	doc.addFont("js/plugins/fonts/calibrib.ttf", "calibri", "bold");
+	doc.setFont("calibri", "bold");
+
+	const config = getConfig();
+
+	// 3. PROCESSAR E DESENHAR TODAS AS CARTAS
+	let pagina = 1;
+	let cartasNaPagina = 1;
+    let paginasDeVerso = {}; 
+
+	for (let i = 0; i < cartasPDF.length; i++) {
+		const carta = cartasPDF[i];
+		const posicao = calculaPosicao(cartasNaPagina, config);
+        const corInfo = getCorPorTipo(carta.tipo, config);
+        
+		desenhaFrente(doc, carta, posicao.x, posicao.y, config, corInfo);
+
+        if (!paginasDeVerso[carta.tipo]) {
+            paginasDeVerso[carta.tipo] = corInfo;
+        }
+
+		cartasNaPagina++;
+
+		if (cartasNaPagina > config.cartasPorPagina || i === cartasPDF.length - 1) {
+			desenhaLinhasCorte(doc, config);
+			if (i < cartasPDF.length - 1) {
+				doc.addPage();
+				pagina++;
+				cartasNaPagina = 1;
+			}
+		}
+	}
+
+	// 4. DESENHAR O(S) VERSO(S) DAS CARTAS
+    for (const tipo in paginasDeVerso) {
+        const corInfo = paginasDeVerso[tipo];
+        doc.addPage();
+        for (let i = 1; i <= config.cartasPorPagina; i++) {
+            const posicao = calculaPosicao(i, config);
+            desenhaVerso(doc, tipo, posicao.x, posicao.y, config, corInfo);
+        }
+        desenhaLinhasCorte(doc, config);
+    }
+
+	// 5. SALVAR O PDF
+	doc.save("Se beber, Nao jogue!.pdf");
+	$("#modal-aguarde").modal('hide');
 }
-// Função que monta as linhas de corte
-function montaLinhasDeCorte(doc, cor = "branca") {
-    doc.setLineWidth(0.1);
 
-    if (cor == "preta") {
-        doc.setDrawColor(255);
-    } else {
-        doc.setDrawColor(0);
+// --- FUNÇÕES AUXILIARES ---
+
+function getConfig() {
+	const tamanhos = {
+		padrao: { altura: 88, largura: 63, cartasPorPagina: 9, fontSize: 13 },
+		menor: { altura: 63, largura: 41, cartasPorPagina: 16, fontSize: 10 },
+		controverso: { altura: 53, largura: 56, cartasPorPagina: 15, fontSize: 10 }
+	};
+	return {
+		...tamanhos[impressao.tamanho],
+		corPadrao: impressao.cor || "#000000",
+		verso: impressao.verso,
+		textoPers: impressao.textoPers || "Se beber, Não jogue!", // Texto do verso
+		margemX: 10,
+		margemY: 10,
+		gap: 1
+	};
+}
+
+// Define esquemas de cores para cada tipo de carta
+function getCorPorTipo(tipo, config) {
+    // Defina seus esquemas de cores aqui
+    // 'headerFundo' é a cor do cabeçalho, 'headerTexto' a cor do texto do cabeçalho
+    const cores = {
+        'p': { fundo: '#212529', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#212529', icone: "-branco" }, // Preto
+        'v': { fundo: '#DC3545', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#DC3545', icone: "-branco" }, // Vermelho (Regra)
+        'a': { fundo: '#0D6EFD', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#0D6EFD', icone: "-branco" }, // Azul (Vote)
+        'g': { fundo: '#198754', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#198754', icone: "-branco" }, // Verde (Eu Nunca)
+        'r': { fundo: '#6610F2', texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: '#6610F2', icone: "-branco" }, // Roxo (Castigo)
+        'b': { fundo: '#FFFFFF', texto: '#000000', headerFundo: '#212529', headerTexto: '#FFFFFF', icone: "-preto" }   // Carta Branca
+    };
+    // Retorna a cor do 'tipo' ou a cor personalizada do usuário (antigo 'p')
+    const corPadraoUsuario = { fundo: config.corPadrao, texto: '#FFFFFF', headerFundo: '#FFFFFF', headerTexto: config.corPadrao, icone: "-branco" };
+    
+    // Se o tipo for 'p' (padrão preto), mas o usuário escolheu uma cor, use a cor do usuário
+    if (tipo === 'p' && config.corPadrao !== "#000000") {
+        return corPadraoUsuario;
     }
+    
+    return cores[tipo] || corPadraoUsuario; // Retorna a cor do tipo ou a cor padrão
+}
 
-    // Linhas verticais
-    for (keyx in coordImpressao[impressao.tamanho].corte.x) {
-        let x = coordImpressao[impressao.tamanho].corte.x;
-        for (keyy in coordImpressao[impressao.tamanho].corte.y) {
-            let y = coordImpressao[impressao.tamanho].corte.y;
-            doc.line(x[keyx], y[keyy] - 1, x[keyx], y[keyy] + 1);
-            //doc.line(x[keyx], 292, x[keyx], 297);
-        }
-    }
 
-    // Linhas horizontais
-    for (keyy in coordImpressao[impressao.tamanho].corte.y) {
-        let y = coordImpressao[impressao.tamanho].corte.y;
-        for (keyx in coordImpressao[impressao.tamanho].corte.x) {
-            let x = coordImpressao[impressao.tamanho].corte.x;
-            doc.line(x[keyx] - 1, y[keyy], x[keyx] + 1, y[keyy]);
-            //doc.line(205, y[keyy], 210, y[keyy]);
-        }
-    }
+function calculaPosicao(num, config) {
+	const cartasPorLinha = Math.floor((210 - (config.margemX * 2)) / config.largura);
+	const linha = Math.ceil(num / cartasPorLinha) - 1;
+	const coluna = (num - 1) % cartasPorLinha;
 
+	return {
+		x: config.margemX + (coluna * (config.largura + config.gap)),
+		y: config.margemY + (linha * (config.altura + config.gap))
+	};
+}
+
+// **** FUNÇÃO PRINCIPAL MODIFICADA (desenhaFrente) ****
+function desenhaFrente(doc, carta, x, y, config, corInfo) {
+    const alturaCabecalho = 10; // Altura do cabeçalho em mm
+    const margemTexto = 4; // Margem interna
+    
+    // 1. Desenha o fundo principal
+	doc.setDrawColor(0);
+	doc.setFillColor(corInfo.fundo);
+	doc.rect(x, y, config.largura, config.altura, impressao.verso === 'padrao' ? 'F' : 'D');
+	
+    // 2. Desenha o fundo do Cabeçalho
+    doc.setFillColor(corInfo.headerFundo);
+    doc.rect(x, y, config.largura, alturaCabecalho, 'F');
+
+    // 3. Desenha o Texto do Cabeçalho (ex: "DESAFIO")
+    doc.setFont("calibri", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(corInfo.headerTexto);
+    doc.text(carta.tipoCarta.toUpperCase(), x + (config.largura / 2), y + (alturaCabecalho / 2) + 2, { align: 'center' });
+
+    // 4. Desenha o Texto Principal (o desafio)
+	doc.setFont("calibri", "normal");
+    doc.setFontSize(config.fontSize);
+	doc.setTextColor(corInfo.texto);
+	let textoFormatado = formataTexto(carta.texto, doc, config.largura - (margemTexto * 2));
+    
+    // Posição Y do texto: 8mm abaixo do cabeçalho
+    let posYTexto = y + alturaCabecalho + 8; 
+	doc.text(textoFormatado, x + (config.largura / 2), posYTexto, { align: 'center', maxWidth: config.largura - (margemTexto * 2) });
+
+	// 5. Desenha o Rodapé (Expansão)
+	doc.setFont("calibri", "bold");
+    doc.setFontSize(7);
+	doc.text(carta.expansao.toUpperCase(), x + (config.largura / 2), y + config.altura - 4, { align: 'center' });
+
+    // 6. Desenha o Logo (Ícone do jogo) no canto
+    // Use o logo 'radioativo' como padrão
+    const logoIconePath = `imgs/icones/radioativo${corInfo.icone}.png`; 
+    try {
+	    doc.addImage(logoIconePath, "PNG", x + 2, y + config.altura - 6, 4, 4);
+    } catch (e) { } // ignora se o logo principal falhar
+}
+
+// Desenha o verso da carta
+function desenhaVerso(doc, tipo, x, y, config, corInfo) {
+    const icone = `imgs/icones/radioativo${corInfo.icone}.png`; // Logo padrão no verso
+    
     doc.setDrawColor(0);
 
-    // Linhas de borda
-    for (key in coordImpressao[impressao.tamanho].corte.x) {
-        let x = coordImpressao[impressao.tamanho].corte.x;
-        doc.line(x[key], 0, x[key], 5);
-        doc.line(x[key], 292, x[key], 297);
-    }
-    for (key in coordImpressao[impressao.tamanho].corte.y) {
-        let y = coordImpressao[impressao.tamanho].corte.y;
-        doc.line(0, y[key], 5, y[key]);
-        doc.line(205, y[key], 210, y[key]);
-    }
-}
-
-// Função que desenha o fundo das cartas pretas
-function fundoCarta(doc) {
-    let x = coordImpressao[impressao.tamanho][impressao.cont][0];
-    let y = coordImpressao[impressao.tamanho][impressao.cont][1];
-    doc.roundedRect(x, y, 63.5, 88, 3, 3);
-}
-
-//Função que atualiza a quantidade de impressão para pular a página
-function atualizaImpCont(doc, tipo) {
-
-    //console.log("Contagem de cartas = " + impressao.cont + "/" + coordImpressao[impressao.tamanho].qtdCartas)
-    //console.log("Tipo = " + tipo + " | Contagem = " + impressao.cont + " / " + impressao.brancas.length);
-    //  console.log(impressao);
-    // Verifica se encheu uma página de cartas
-    if (impressao.cont == coordImpressao[impressao.tamanho].qtdCartas) {
-        montaLinhasDeCorte(doc, tipo);
-        if (impressao.paginas.atual != impressao.paginas.total) {
-            impressao.cont = 1;
-            doc.addPage();
-            impressao.paginas.atual = ++impressao.paginas.atual;
-        }
-        // Se não encheu a página, verifica se a carta atual é igual ao total de cartas
-    } else if ((tipo == "branca" && impressao.acumulador == impressao.brancas.length) || (tipo == "preta" && impressao.acumulador == impressao.pretas.length)) {
-        montaLinhasDeCorte(doc, tipo);
+    if (config.verso === 'padrao') {
+        doc.setFillColor(corInfo.fundo);
+        doc.rect(x, y, config.largura, config.altura, 'F');
     } else {
-        impressao.cont = ++impressao.cont;
+        doc.setFillColor(corInfo.fundo);
+        doc.rect(x, y, config.largura, 5, 'F'); // Faixa superior
+        doc.rect(x, y + config.altura - 5, config.largura, 5, 'F'); // Faixa inferior
+        doc.rect(x, y, 5, config.altura, 'F'); // Faixa esquerda
+        doc.rect(x + config.larga - 5, y, 5, config.altura, 'F'); // Faixa direita
     }
-    impressao.acumulador = ++impressao.acumulador;
+
+    doc.setTextColor(corInfo.texto);
+    doc.setFontSize(12);
+    // Usa o texto personalizado do usuário (ou o padrão)
+    doc.text(config.textoPers.split(' ').join('\n'), x + (config.largura / 2), y + (config.altura / 2) - 5, { align: 'center' }); 
+    try {
+        doc.addImage(icone, "PNG", x + (config.largura / 2) - 7.5, y + (config.altura / 2) - 20, 15, 15);
+    } catch (e) { }
 }
 
-// Função que monta a parte da frente das cartas
-function montaFrentes(tipo, val, doc, total) {
 
-    let xfora = coordImpressao[impressao.tamanho][impressao.cont][0];
-    let yfora = coordImpressao[impressao.tamanho][impressao.cont][1];
-    let tamanhoCarta = coordImpressao[impressao.tamanho].tamanhoCarta;
-    let margemCarta = coordImpressao[impressao.tamanho].margemCarta;
-    let margemRodape = coordImpressao[impressao.tamanho].margemRodape;
+function desenhaLinhasCorte(doc, config) {
+	doc.setDrawColor(200, 200, 200);
+	doc.setLineWidth(0.1);
 
-    let tamanhoLogo = coordImpressao[impressao.tamanho].tamanhoLogo;
+	const cartasPorLinha = Math.floor((210 - (config.margemX * 2)) / config.largura);
+	const numLinhas = Math.ceil(config.cartasPorPagina / cartasPorLinha);
 
-    let tamanhoFonteCarta = coordImpressao[impressao.tamanho].fonteCarta;
-    let tamanhoFonteRodape = coordImpressao[impressao.tamanho].fonteRodape;
-    let tamanhoFonteRodapeMM = coordImpressao[impressao.tamanho].tamanhoFonteRodape;
-    let correcaoRodape = coordImpressao[impressao.tamanho].correcaoRodape;
+	// Linhas horizontais
+	for (let i = 0; i <= numLinhas; i++) {
+		let posY = config.margemY + (i * (config.altura + config.gap));
+		if (i > 0) posY -= config.gap;
+		doc.line(5, posY, 205, posY);
+	}
 
-    let tamanhoMaxTexto = tamanhoCarta[0] - (margemCarta[0] * 2);
-
-    let sangria = coordImpressao[impressao.tamanho].sangria;
-
-    doc.setDrawColor(255);
-
-    let icone = impressao.categorias[val["categoria"]] || "radioativo";
-
-    let textoRodape = $("#texto-rodape").val() || "Cartas Radioativas";
-
-    let tamRodape = doc.getStringUnitWidth(textoRodape) * tamanhoFonteRodape / (72 / 25.6);
-    let maxRodape = tamanhoCarta[0] - (2 * margemCarta[0]) - tamanhoLogo[0] - margemRodape[0];
-    let textoRodapeX = xfora + margemCarta[0] + tamanhoLogo[0] + margemRodape[0]; //xRodapeDentro + 8;
-
-    //Cálculo da quantidade de linhas do rodapé para ajustar a altura
-    let rodapeLinhas = Math.ceil(Math.floor(tamRodape) / maxRodape);
-
-    //Ajusta o y do rodapé no caso de multiplas linhas
-    let textoRodapeY = yfora + margemRodape[1] - ((rodapeLinhas - 1) * tamanhoFonteRodapeMM) - correcaoRodape;
-
-    textoCarta = val["texto"].replace(/<</g, "\\n<<").replace(/>>/g, ">>\\n").split("\\n") //quebra as linhas nos "\n"
-
-    textoCarta = textoCarta.flatMap((linha, i) => {
-        if (linha.indexOf("<<") !== -1 && linha.indexOf(">>") !== -1) {
-            linha = linha.replace(/<</g, "").replace(/>>/g, "").trim();
-            let tamanhoUnderline = emMM(doc.getCharWidthsArray("_"), tamanhoFonteCarta); //Pega o tamanho do "_" em mm
-            let tamanhoLinha = emMM(doc.getStringUnitWidth(linha), tamanhoFonteCarta); // Pega o tamanho da linha em mm
-            let espaco = tamanhoMaxTexto - tamanhoLinha; //Pega o espaço restante na linha
-            let qtdUnderlinesAdicionar = Math.ceil(espaco / tamanhoUnderline); //Calcula quantos "_" podem ser adicionados
-            linha = linha.replace(/_/g, "_".repeat(qtdUnderlinesAdicionar)); //Insere o nro de "_" suficientes para preencher a linha toda.
-
-        } else {
-            linha = trocaUnderline(linha);
-        }
-
-        linha = linha.split("\\n")
-        linha = linha.map((elem) => elem.trim()); // Remove os espaços em cada linha
-        linha = linha.filter((elem) => elem != ""); //Limpa as linhas vazias
-        linha = doc.setFontSize(tamanhoFonteCarta).splitTextToSize(linha, tamanhoMaxTexto);
-
-        return linha;
-    })
-
-    if (tipo != "branca" && impressao.verso == "padrao") {
-        doc.setFillColor(impressao.cor || 0); //dentro
-        doc.setTextColor(255);
-        doc.rect(xfora - sangria, yfora - sangria, tamanhoCarta[0] + (sangria * 2), tamanhoCarta[1] + (sangria * 2), "F");
-        //fundoCarta(doc);
-
-        doc.text(textoCarta, xfora + margemCarta[0], yfora + margemCarta[1]);
-
-        //rodapé
-        textoRodape = doc.setFontSize(tamanhoFonteRodape).splitTextToSize(textoRodape, maxRodape);
-        doc.text(
-            textoRodape,
-            textoRodapeX,
-            textoRodapeY
-        );
-        doc.addImage(
-            "imgs/icones/" + icone + "-branco.png",
-            "png",
-            xfora + margemCarta[0],
-            yfora + margemRodape[1] - tamanhoLogo[1],
-            tamanhoLogo[0],
-            tamanhoLogo[1]
-        );
-    } else {
-        doc.setFillColor(255);
-        doc.setTextColor(0);
-        fundoCarta(doc);
-
-        doc.text(textoCarta, xfora + margemCarta[0], yfora + margemCarta[1]);
-
-        //rodapé
-
-        if (tipo == "branca") {
-            doc.addImage(
-                "imgs/icones/" + icone + "-preto.png",
-                "png",
-                xfora + margemCarta[0],
-                yfora + margemRodape[1] - tamanhoLogo[1],
-                tamanhoLogo[0],
-                tamanhoLogo[1]
-            );
-        } else {
-            doc.setFillColor(impressao.cor || 0);
-            doc.rect(xfora - sangria, yfora + margemRodape[1] - tamanhoLogo[1] - (tamanhoLogo[1] / 2), tamanhoCarta[0] + (2 * sangria), tamanhoLogo[1] * 2, "F");
-            doc.setTextColor(255);
-            doc.addImage(
-                "imgs/icones/" + icone + "-branco.png",
-                "png",
-                xfora + margemCarta[0],
-                yfora + margemRodape[1] - tamanhoLogo[1],
-                tamanhoLogo[0],
-                tamanhoLogo[1]
-            );
-        }
-
-        textoRodape = doc.setFontSize(tamanhoFonteRodape).splitTextToSize(textoRodape, maxRodape);
-        doc.text(
-            textoRodape,
-            textoRodapeX,
-            textoRodapeY
-        );
-    }
-
-    //  montaLinhasDeCorte(doc, tipo);
-
-    atualizaImpCont(doc, tipo, total);
+	// Linhas verticais
+	for (let i = 0; i <= cartasPorLinha; i++) {
+		let posX = config.margemX + (i * (config.largura + config.gap));
+		if (i > 0) posX -= config.gap;
+		doc.line(posX, 5, posX, 292);
+	}
 }
 
-function montaVersos(doc) {
+// Formata o texto (removemos a lógica de underline)
+function formataTexto(texto, doc, larguraMax) {
+    texto = texto.replace(/<</g, '\n').replace(/>>/g, '\n');
+    let linhas = texto.split(/\\n|\n/);
+    let textoFinal = [];
 
-    let tamanhoLogo = coordImpressao[impressao.tamanho].tamanhoLogoVerso;
-
-    let tamanhoCarta = coordImpressao[impressao.tamanho].tamanhoCarta;
-    let margemCarta = coordImpressao[impressao.tamanho].margemCarta;
-    let maxVersoText = coordImpressao[impressao.tamanho].tamanhoCarta[0] - coordImpressao[impressao.tamanho].margemCarta[0] * 2;
-    let versoTexto = impressao.textoPers;
-    let tamanhoTexto = coordImpressao[impressao.tamanho].fonteCarta;
-    let tamanhoFonte = coordImpressao[impressao.tamanho].tamanhoFonte;
-
-    let tamLogoTexto = doc.getStringUnitWidth(versoTexto) * tamanhoTexto / (72 / 25.6);
-    let maxLogoTexto = tamanhoCarta[0] - (2 * margemCarta[0]);
-    let margemLogoVersoY = coordImpressao[impressao.tamanho].margemLogoVersoY;
-    let correcao = 2;
-
-    //Cálculo da quantidade de linhas do rodapé para ajustar a altura
-    let rodapeLinhas = Math.ceil(Math.floor(tamLogoTexto) / maxLogoTexto);
-
-    qtdCartas = coordImpressao[impressao.tamanho].qtdCartas;
-
-    // Brancas
-    if (impressao.brancas.length > 0) {
-        doc.addPage();
-        //montaLinhasDeCorte(doc);
-
-        doc.setTextColor(0);
-
-        for (let i = 1; i < qtdCartas + 1; i++) {
-
-            // doc.setDrawColor(0); ///////////////////////////////
-            // fundoCarta(doc); /////////////////////////////////
-            // atualizaImpCont(doc); ////////////////////// REMOVER
-
-            let coordCarta = coordImpressao[impressao.tamanho][i];
-            let coordLogo = [coordCarta[0] - correcao + (tamanhoCarta[0] / 2) - tamanhoLogo[0] / 2, coordCarta[1] + margemLogoVersoY];
-
-
-            versoTexto = doc.setFontSize(tamanhoTexto).splitTextToSize(versoTexto, maxVersoText);
-
-            doc.addImage(
-                "imgs/icones/radioativo-preto.png",
-                "png",
-                coordLogo[0],
-                coordLogo[1],
-                tamanhoLogo[0],
-                tamanhoLogo[1]
-            );
-
-            doc.text(
-                versoTexto,
-                coordCarta[0] - correcao + (tamanhoCarta[0] / 2),
-                coordLogo[1] + tamanhoLogo[1] + (margemCarta[1] / 2) + (tamanhoFonte / 2),
-                null,
-                null,
-                "center"
-            );
+    linhas.forEach(linha => {
+        linha = linha.trim();
+        if (linha) {
+            doc.splitTextToSize(linha, larguraMax).forEach(l => textoFinal.push(l));
         }
-    }
-
-    //Pretas
-    if (impressao.pretas.length > 0) {
-        doc.addPage();
-        //montaLinhasDeCorte(doc);
-
-        doc.setFillColor(impressao.cor || 0);
-        doc.setTextColor(255);
-
-        let x = coordImpressao[impressao.tamanho].corte.x;
-        let y = coordImpressao[impressao.tamanho].corte.y;
-
-        if (impressao.verso == "padrao") {
-            doc.rect(5, 5, 200, 287, "F");
-
-        } else {
-            for (let i = 0; i < x.length - 1; i++) {
-                doc.rect(5, y[i] + margemCarta[1], 200, tamanhoLogo[1] + margemCarta[1] + (rodapeLinhas * tamanhoFonte) + (tamanhoFonte / 2), "F");
-                // doc.rect(5, y[i] + margemCarta[1], 200, tamanhoLogo[1] * 2 + margemCarta[1], "F");
-            }
-        }
-
-        for (let i = 1; i < qtdCartas + 1; i++) {
-
-            // doc.setDrawColor(0); ///////////////////////////////
-            // fundoCarta(doc); /////////////////////////////////
-            // atualizaImpCont(doc); ////////////////////// REMOVER
-            let coordCarta = coordImpressao[impressao.tamanho][i];
-
-            let coordLogo = [coordCarta[0] - correcao + (tamanhoCarta[0] / 2) - tamanhoLogo[0] / 2, coordCarta[1] + margemCarta[1] + (margemCarta[1] / 2)];
-
-            doc.setTextColor(255);
-            doc.addImage(
-                "imgs/icones/radioativo-branco.png",
-                "png",
-                coordLogo[0],
-                coordLogo[1],
-                tamanhoLogo[0],
-                tamanhoLogo[1]
-            );
-
-            versoTexto = doc.setFontSize(tamanhoTexto).splitTextToSize(versoTexto, maxVersoText);
-            doc.text(
-                versoTexto,
-                coordCarta[0] - correcao + (tamanhoCarta[0] / 2),
-                coordLogo[1] + tamanhoLogo[1] + (margemCarta[1] / 2) + (tamanhoFonte / 2),
-                null,
-                null,
-                "center"
-            );
-        }
-    }
-}
-
-// Função que monta o PDF
-function montaPDF() {
-
-    impressao.cont = 1;
-    impressao.acumulador = 1;
-
-    const doc = new jsPDF();
-
-    //  montaLinhasDeCorte(doc);
-
-    //Pega os textos das cartas nas tabelas
-    impressao.brancas = $.map($("#corpo-tabela-brancas > tr.marcado"), (val, i) => {
-        return {
-            texto: $(val).children("td.carta-texto").text(),
-            categoria: $(val).children("td.carta-categoria").text()
-        };
     });
-    impressao.pretas = $.map($("#corpo-tabela-pretas > tr.marcado"), (val, i) => {
-        return {
-            texto: $(val).children("td.carta-texto").text(),
-            categoria: $(val).children("td.carta-categoria").text()
-        };
-    });
-
-    //Pega o número de páginas
-    impressao.paginas = {
-        total: Math.ceil(impressao.brancas.length / 9) + Math.ceil(impressao.pretas.length / 9),
-        atual: 1
-    };
-
-    //Monta as frentes brancas
-    if (impressao.brancas.length > 0) {
-        $.each(impressao.brancas, (i, val) => {
-            //console.log(impressao);
-            montaFrentes("branca", val, doc, impressao.brancas.length)
-                // montaLinhasDeCorte(doc);
-        });
-    }
-
-    if (impressao.pretas.length > 0) {
-        if (impressao.brancas.length % 9 != 0) {
-            montaLinhasDeCorte(doc, "branca");
-            doc.addPage();
-        }
-
-        impressao.cont = 1;
-
-        //Monta as frentes pretas00000000
-        $.each(impressao.pretas, (i, val) => {
-            //console.log(impressao);
-            montaFrentes("preta", val, doc, impressao.pretas.length)
-                // montaLinhasDeCorte(doc, "preta");
-        });
-        if (impressao.pretas.length % 9 != 0) {
-            montaLinhasDeCorte(doc, "preta");
-        }
-    }
-
-    //Monta os versos
-    montaVersos(doc);
-
-    doc.setProperties({
-        title: "Cartas Radioativas",
-        subject: "Jogo Cartas Radioativas",
-        author: "lvmasterrj",
-        creator: "cartasradioativas.com"
-    });
-
-    //doc.output("dataurlnewwindow", "cartas-radioativas.pdf"); // Exibe o pdf mas não salva
-    //window.open(doc.output('bloburl', "cartas-radioativas.pdf"), '_blank'); // Funciona mas o nome do arquivo fica ruim
-    doc.save("Cartas-radioativas"); // Salva com o nome correto,mas não faz preview
-
+    return textoFinal;
 }

@@ -1,58 +1,54 @@
+// js/script.js (Refatorado para filtro único de expansão)
+
 var impressao = {
     cont: 1,
     acumulador: 1,
     cor: null,
     verso: "padrao",
     tamanho: "padrao",
-    textoPers: "Cartas Radioativas",
-    categorias: {}
+    textoPers: "Se beber, Não jogue!",
+    expansoes: {} // Apenas expansões
 };
-var dbCartas = {};
+var dbCartas = []; // Array plano de cartas
+var filtrosAtivos = {
+    expansoes: [] // Apenas expansões
+};
 
 const { jsPDF } = window.jspdf;
 
 $(document).ready(() => {
     $("#modal-aguarde").modal('show');
-    pegaCategoriasBD();
-    pegaCartasBD();
+    pegaDadosBD();
 });
 
-// Função que pega as cartas na tabela
-function pegaCartasBD() {
-    $.get("server/cartas.php", { tabela: "todas" })
-        .done(function(data) {
-            dbCartas = data;
-            adicionaCategorias();
-            $("#modal-aguarde").modal('hide');
-        })
-        .fail(function(e) {
-            console.log("ERRO ao pegar as cartas no BD");
-            //console.log(e);
-        });
+function pegaDadosBD() {
+    // 1. Carrega Expansões
+    for (const key in localExpansoesDB) {
+        impressao.expansoes[key] = localExpansoesDB[key];
+    }
+    adicionaExpansoes();
+
+    // 2. Carrega Cartas
+    dbCartas = localCartasDB;
+    
+    $("#modal-aguarde").modal('hide');
+    // Seleciona todas as expansões por padrão
+    $("#botoes-expansoes .btn-check").prop("checked", true);
+    
+    atualizaFiltroCartas();
 }
 
-function pegaCategoriasBD() {
-    $.get("server/categorias.php")
-        .done(function(data) {
-            for (const key in data) {
-                impressao.categorias[data[key].nome] = data[key].icone
-            }
-        })
-        .fail(function(e) {
-            console.log("ERRO ao pegar as categorias");
-            //console.log(e);
-        });
-}
-
-
-function adicionaCategorias() {
-    for (key in dbCartas) {
-        $("#botoes-categorias").append(
+// Adiciona botões de expansão
+function adicionaExpansoes() {
+    for (key in impressao.expansoes) {
+        const icone = impressao.expansoes[key];
+        const count = localCartasDB.filter(c => c.expansao === key).length;
+        $("#botoes-expansoes").append(
             `<div class="btn-categoria-wrap">
-				<input type="checkbox" class="btn-check btn-categoria" id="btn-${normaliza(key)}" autocomplete="off" value="${key}">
-				<label class="btn btn-outline-secondary" for="btn-${normaliza(key)}">${impressao.categorias[key]?'<img src="./imgs/icones/' + impressao.categorias[key] + '-preto.png" width="30" height="30" class="align-text-bottom me-2" imagem="' + impressao.categorias[key] + '">':''}${key} <span class="badge bg-dark qtd ms-1">${dbCartas[key].length}</span></label>
-				</div>`
-        )
+				<input type="checkbox" class="btn-check btn-filtro" id="btn-exp-${normaliza(key)}" autocomplete="off" value="${key}">
+				<label class="btn btn-outline-secondary" for="btn-exp-${normaliza(key)}">${icone?'<img src="./imgs/icones/' + icone + '-preto.png" width="30" height="30" class="align-text-bottom me-2" imagem="' + icone + '">':''}${key} <span class="badge bg-dark qtd ms-1">${count}</span></label>
+			</div>`
+        );
     }
 }
 
@@ -60,235 +56,131 @@ function normaliza(str) {
     return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-// Listen pra quando marca os botões de categoria
-$("#botoes-categorias").on("change", ".btn-categoria", (e) => {
-    if ($(e.currentTarget).is(":checked")) {
-        montaTabela(e.currentTarget.value);
-    } else {
-        removeLinhaTabela(e.currentTarget.value);
-    }
+// Listener unificado para filtros
+$(document).on("change", ".btn-filtro", (e) => {
+    atualizaFiltroCartas();
 });
 
-// Função que remove a linha da tabela
-function removeLinhaTabela(categoria) {
-    $("tr[categoria|='" + categoria + "'").remove();
-    atualizaQtd();
-}
+// Lógica de filtro (simplificada)
+function atualizaFiltroCartas() {
+    $("#corpo-tabela-desafios").empty();
+    
+    // Obtém filtros de expansão ativos
+    filtrosAtivos.expansoes = $("#botoes-expansoes .btn-filtro:checked").map(function() { return $(this).val(); }).get();
 
-// Função que cria a tabela de cartas
-function montaTabela(categoria) {
-    let cartasBrancas = "",
-        cartasPretas = "";
-
-    $.each(dbCartas[categoria], function(key, val) {
-        if (val.tipo == "b") {
-            cartasBrancas = cartasBrancas + novaLinhaTabela(val, categoria);
-        } else {
-            cartasPretas = cartasPretas + novaLinhaTabela(val, categoria);
-        }
+    // Filtra o DB de cartas
+    const cartasFiltradas = dbCartas.filter(carta => {
+        return filtrosAtivos.expansoes.includes(carta.expansao);
     });
-    $("#corpo-tabela-brancas").append(cartasBrancas);
-    $("#corpo-tabela-pretas").append(cartasPretas);
+
+    // Constrói e insere o HTML da tabela
+    let cartasHTML = "";
+    cartasFiltradas.forEach(carta => {
+        cartasHTML += novaLinhaTabela(carta);
+    });
+    $("#corpo-tabela-desafios").append(cartasHTML);
+    
     atualizaQtd();
 }
 
-// Função que formata uma nova linha da tabela
-function novaLinhaTabela(dados, categoria, marcado) {
-    return `<tr class="${marcado ? "marcado" : ""}" tipo="${dados.tipo}" texto="${
-		dados.texto
-	}" ${dados.id ? "id=" + dados.id : ""} categoria="${
-		categoria ? categoria : ""
-	}">
-                <td class="carta-texto">${dados.texto}</td>
-                <td class="carta-categoria">${categoria ? categoria : ""}</td>
-                <td class="btns">${
+// Formata a linha da tabela (com novos atributos)
+function novaLinhaTabela(carta, marcado) {
+    return `<tr class="${marcado ? "marcado" : ""}" 
+                tipo="${carta.tipo}" 
+                texto="${carta.texto}" 
+                tipoCarta="${carta.tipoCarta}" 
+                expansao="${carta.expansao}"
+                ${carta.id ? "id=" + carta.id : ""}>
+                    <td class="carta-texto">${carta.texto}</td>
+                    <td class="carta-categoria">${carta.tipoCarta}</td> 
+                    <td class="btns">${
 									marcado ? `<span class="btn-remover">remover</span>` : ""
 								}</td>
             </tr>
             `;
 }
 
-// Listen para quando o usuário seleciona uma carta na tabela
 $("tbody").on("click", "tr", function (e) {
 	let dados = $(e.currentTarget);
 	marca(dados);
 });
 
-// Função que atualiza o estilo da linha da tabela quando (des)selecionada
 function marca(e) {
 	e.toggleClass("marcado");
 	atualizaQtd();
 }
 
 function atualizaQtd() {
-	$(".qtd-brancas > .qtd-selec").text(
-		$("#corpo-tabela-brancas > .marcado").length
+	$(".qtd-desafios > .qtd-total").text($("#corpo-tabela-desafios > tr").length);
+	$(".qtd-desafios > .qtd-selec").text(
+		$("#corpo-tabela-desafios > .marcado").length
 	);
-	$(".qtd-brancas > .qtd-total").text($("#corpo-tabela-brancas > tr").length);
-	$(".qtd-pretas > .qtd-selec").text(
-		$("#corpo-tabela-pretas > .marcado").length
-	);
-	$(".qtd-pretas > .qtd-total").text($("#corpo-tabela-pretas > tr").length);
 }
 
-// Função que formata o texto inserido das cartas pretas e adiciona à tabela p/ impressão
-function adicionaPretaPersonalizada() {
-	if (!$("#texto-personalizacao-pretas").val()){
-		Swal.fire({ 
-			icon: 'error',
-			title: 'Qual seu problema!?',
-			text: 'Você não inseriu nenhuma carta preta!'
-		});
-	} else {
-		let campo = $("#texto-personalizacao-pretas");
-		let textos = campo.val().split("\n");
-
-		textosCorrigidos = textos.map((texto) => {
-			texto = texto.replace(!/[()\w+]/g, "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-			return texto
-		});
-
-		adicionaCartaNaTabela(textosCorrigidos, "p");
-		campo.val("");
-	}
-}
-
-// Listen para quando clica dentro do campo de edição das cartas pretas
-$("#texto-personalizacao-pretas").mouseup(()=> atualizaPreview());
-// Listen para quando se digita no campo de edição das cartas pretas
-$("#texto-personalizacao-pretas").keyup(()=> atualizaPreview())
-
-// Função que atualiza a carta de previw na edição das cartas pretas
-function atualizaPreview(){
-	var linhas = $("#texto-personalizacao-pretas").val().split("\n");
-	var linhaAtual = $("#texto-personalizacao-pretas").val().substr(0, $("#texto-personalizacao-pretas")[0].selectionStart).split("\n").length-1;
-	let texto = linhas[linhaAtual];
-
-	texto = texto.replace(/<</g, "\\n<<").replace(/>>/g, ">>\\n")
-	$("#preview-carta-preta").show();
-	texto = texto.split("\\n")
-	const jsPDFDoc = new jsPDF({unit:"px", hotfixes: ["px_scaling"]});
-	jsPDFDoc.setFontSize(16);
-	texto = texto.flatMap((linha)=>{
-
-		if (linha.indexOf("<<") !== -1 || linha.indexOf(">>") !== -1) {
-			linha = linha.replace(/<</g, "").replace(/>>/g, "").trim();
-			
-			let tamanhoUnderline = jsPDFDoc.getCharWidthsArray("_") * 16; //Pega o tamanho do "_" em mm
-			let tamanhoLinha = jsPDFDoc.getStringUnitWidth(linha) * 16; // Pega o tamanho da linha em mm
-			let espaco = 150 - tamanhoLinha; //Pega o espaço restante na linha
-			let qtdUnderlinesAdicionar = Math.ceil(espaco / tamanhoUnderline); //Calcula quantos "_" podem ser adicionados
-			linha = linha.replace(/_/g, "_".repeat(qtdUnderlinesAdicionar)); //Insere o nro de "_" suficientes para preencher a linha toda.
-			//let tamanhoFinal = jsPDFDoc.getStringUnitWidth(linha) * 16; // Pega o tamanho da linha em mm
-
-		} else {
-			linha = trocaUnderline(linha);
-		}
-
-		linha = linha.split("\\n");
-		linha = linha.map((elem)=>elem.trim());// Remove os espaços em cada linha
-      linha = linha.filter((elem) => elem != "");// Remove os valores em branco
-		linha = jsPDFDoc.splitTextToSize(linha, 205);
-		return linha;
-	})
-	
-	.join("<br>");
-	
-	$(".texto-preview").html(texto);
-}
-
-function trocaUnderline(texto = ""){
-	return texto
-		.trim()
-		.replace(/(?<!_)_\./g, "\\n________________.\\n") //Substitui "_."
-		.replace(/(?<!_)_\!/g, "\\n________________!\\n") //Substitui "_!"
-		.replace(/(?<!_)_\?/g, "\\n________________?\\n") //Substitui "_?"
-		.replace(/(?<!_)_\,/g, "\\n________________,\\n") //Substitui "_,"
-		.replace(/(?<!_)_\;/g, "\\n________________;\\n") //Substitui "_;"
-		.replace(/(?<!_)_\:/g, "\\n________________:\\n") //Substitui "_;"
-		.replace(/(?<!_)_(?!_)/g, "\\n_________________\\n") //Substitui "_"
-}
-
-// Listen para ocultar a carta de preview quando sai do campo
-$("#texto-personalizacao-pretas").focusout(()=>{
-	$("#preview-carta-preta").hide();
-})
-
-// Listens para quando clica no botão de adicionar item à edição
-$("#btn-adiciona-linha").click(()=>{
-	adicionaItemNaCarta("_", 1)
-})
-$("#btn-adiciona-quebra-linha").click(()=>{
-	adicionaItemNaCarta("\\n", 2)
-})
-$("#btn-adiciona-texto-encapsulado").click(()=>{
-	adicionaItemNaCarta("<<_>>",2)
-})
-
-//Função que adiciona os itens na edição das cartas pretas
-function adicionaItemNaCarta(item, retorno = 0){
-	$("#preview-carta-preta").show();
-	let campoPersonalizaPreta = $("#texto-personalizacao-pretas")
-	let inicioCursor = campoPersonalizaPreta[0].selectionStart;
-	let finalCursor = campoPersonalizaPreta[0].selectionEnd;
-	let ateCursor = campoPersonalizaPreta.val().substr(0, inicioCursor);
-	let aposCursor = campoPersonalizaPreta.val().substr(finalCursor);
-	if (inicioCursor == finalCursor){
-		campoPersonalizaPreta.val(ateCursor + item + aposCursor);
-	} else {
-		selecao = campoPersonalizaPreta.val().substr(inicioCursor, finalCursor - inicioCursor);
-		campoPersonalizaPreta.val(ateCursor + "<<" + selecao + ">>" + aposCursor);
-	}
-	campoPersonalizaPreta[0].focus();
-	campoPersonalizaPreta[0].setSelectionRange(ateCursor.length + retorno, ateCursor.length + retorno);
-	atualizaPreview()
-}
-
-// Função que formata o texto inserido das cartas brancas e adiciona à tabela p/ impressão
-function adicionaBrancaPersonalizada() {
-	if (!$("#texto-personalizacao-brancas").val()){
+// Adiciona cartas personalizadas
+async function adicionaDesafioPersonalizado() {
+	if (!$("#texto-personalizacao-desafios").val()){
 		Swal.fire({ 
 			icon: 'error',
 			title: 'Cabeção!',
-			text: 'Você não inseriu nenhuma carta branca!'
+			text: 'Você não inseriu nenhuma carta!'
 		});
-	} else {
-		let campo = $("#texto-personalizacao-brancas");
+        return;
+	}
+    
+    // PERGUNTA O TIPO DE CARTA (CABEÇALHO)
+    const { value: tipoCarta } = await Swal.fire({
+        title: 'Tipo da Carta',
+        input: 'text',
+        inputLabel: 'Qual é o cabeçalho desta(s) carta(s)? (ex: DESAFIO, REGRA, VOTE)',
+        inputValue: 'DESAFIO',
+        showCancelButton: true,
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Você precisa definir um tipo!';
+            }
+        }
+    });
+
+    // Se o usuário inseriu um tipo
+    if (tipoCarta) {
+		let campo = $("#texto-personalizacao-desafios");
 		let textos = campo.val().split("\n");
 	
 		textosCorrigidos = textos.map((texto) => {
 			return texto.replace(!/[()\w+]/g, "");
 		});
 	
-		adicionaCartaNaTabela(textosCorrigidos, "b");
+        // Adiciona as cartas com o tipo definido
+		adicionaCartaNaTabela(textosCorrigidos, 'p', tipoCarta.toUpperCase()); 
 		campo.val("");
-	}	
+    }
 }
 
-// Função que adiciona as cartas personalizadas na tabela p/ impressão
-function adicionaCartaNaTabela(textos, tipo) {
+// Adiciona as cartas personalizadas na tabela
+function adicionaCartaNaTabela(textos, tipo, tipoCarta) {
 	let items = "";
 	for (key in textos) {
-		info = { texto: textos[key], tipo: tipo };
-		items = items + novaLinhaTabela(info, "Minha carta", 1);
+        const carta = {
+            texto: textos[key],
+            tipo: tipo, // Cor padrão
+            tipoCarta: tipoCarta, // Cabeçalho
+            expansao: 'PERSONALIZADO' // Rodapé
+        };
+		items = items + novaLinhaTabela(carta, true); // 'true' para já vir marcado
 	}
-	if (tipo == "b") {
-		$("#corpo-tabela-brancas").append(items);
-	} else {
-		$("#corpo-tabela-pretas").append(items);
-	}
+	$("#corpo-tabela-desafios").append(items);
 	atualizaQtd();
 }
 
-//Listen para quando o usuário remove a linha/carta da tabela
 $("tbody").on("click", ".btn-remover", function (e) {
 	$(e.currentTarget).parents("tr").remove();
+    atualizaQtd();
 });
 
-// Função de selecionar todas as cartas na tabela
-function selecionaTodas(tipo) {
+function selecionaTodas() {
 	$.each(
-		$("#corpo-tabela-" + tipo)
+		$("#corpo-tabela-desafios")
 			.children("tr")
 			.not(".marcado"),
 		(i, v) => {
@@ -297,68 +189,55 @@ function selecionaTodas(tipo) {
 	);
 }
 
-// Função de desselecionar todas as cartas na tabela
-function desselecionaTodas(tipo) {
-	$.each($("#corpo-tabela-" + tipo).children("tr.marcado"), (i, v) => {
+function desselecionaTodas() {
+	$.each($("#corpo-tabela-desafios").children("tr.marcado"), (i, v) => {
 		marca($(v));
 	});
 }
 
-// Listen para o botão de troca da cor de fundo
+// --- Funções de personalização e PDF ---
+
 $("#cor-fundo").change((e) => {
 	impressao.cor = $(e.currentTarget).val();
 	trocaCorPreta();
 });
 
-//Listen para os radios de cor das cartas
 $("#tipo-fundo .form-check-input").on("change", () => {
 	impressao.verso = $("input[name=tipo-fundo]:checked").val();
 	$(".carta-exemplo.preta").toggleClass("economico");
 	trocaCorPreta();
 });
 
-//Listen para os radios de cor das cartas
 $("#tamanho-carta .form-check-input").on("change", () => {
 	impressao.tamanho = $("input[name=tamanho-carta]:checked").val();
-	// $(".carta-exemplo.preta").toggleClass("economico");
-	// trocaCorPreta();
 });
 
-// Função que troca as cores da carta de exemplo
+// Atualiza o exemplo de carta
 function trocaCorPreta() {
+    const cor = impressao.cor || '#000';
 	if (impressao.verso == "padrao") {
-		$(".fundo-preta-exemplo").css("background-color", impressao.cor || "#000");
+		$(".fundo-preta-exemplo").css("background-color", cor);
+        $(".exemplo-header").css("background-color", "#fff").css("color", cor);
 	} else {
 		$(".fundo-preta-exemplo").css("background-color", "#fff");
-		$(".rodape-economico").css("background-color", impressao.cor || "#000");
-		$(".fundo-economico").css("background-color", impressao.cor || "#000");
+		$(".rodape-economico").css("background-color", cor);
+		$(".fundo-economico").css("background-color", cor);
+        $(".exemplo-header").css("background-color", cor).css("color", "#fff");
 	}
 }
 
-//Listen para o texto personalizado
 $("#texto-rodape").on("input", (e) => {
-	impressao.textoPers = $(e.currentTarget).val() || "Cartas Radioativas";
-	$(".texto-cartas").text(impressao.textoPers);
+	impressao.textoPers = $(e.currentTarget).val() || "Se beber, Não jogue!";
+    // Atualiza o texto do verso no exemplo
+	$(".fundo-carta-logo .texto-cartas").html(impressao.textoPers.split(' ').join('<br />'));
 });
 
-// Função que salva as cartas do usuário
+// Função de salvar desativada
 function salvaCartasBD() {
-	let cartas = [];
-
-	$.each($("tr[categoria='Minha carta']"), (i, v) => {
-		cartas.push({ texto: $(v).attr("texto"), tipo: $(v).attr("tipo") });
-	});
-
-	$.post("server/cartas.php", { tipo: "POST", cartas: cartas })
-		.done(function (data) {
-			//console.log(data);
-		})
-		.fail(function (e) {
-			//console.log(e);
-		});
+    console.log("Modo estático: A função 'salvaCartasBD' foi ignorada.");
 }
 
-// Função para gerar o PDF
+// Gerar PDF (agora verifica 'expansao' para personalizadas)
 function gerarPDF() {
 	if ($("tr.marcado").length == 0) {
 		Swal.fire({
@@ -369,21 +248,16 @@ function gerarPDF() {
 		return;
 	}
 
-	if ($("tr[categoria='Minha carta']").length > 0) {
+	if ($("tr[expansao='PERSONALIZADO']").length > 0) {
 		Swal.fire({
-			title: "Podemos salvar suas cartas?",
-			html: 'Tudo que é ruim deve ser compartilhado.<br>Podemos salvar as suas cartas para a galera desfrutar/sofrer também?!<br><span class="fs-6 text-black-50"><em>As cartas serão avaliadas e caso aprovadas aparecerão na categoria de cartas "personalizadas"</em></span>',
+			title: "Gerar PDF com cartas personalizadas?",
+			html: 'As suas cartas personalizadas serão incluídas neste PDF.<br><span class="fs-6 text-black-50"><em>(A opção de salvar cartas está desativada no modo estático.)</em></span>',
 			icon: "question",
-			showDenyButton: true,
 			showCancelButton: true,
-			confirmButtonText: `<i class="fa fa-thumbs-up"></i> Claro, pode salvar`,
-			denyButtonText: `<i class="fa fa-thumbs-down"></i> Não, só gere meu PDF`,
-			cancelButtonText: `Espera, ainda não estou pronto`,
+			confirmButtonText: `Gerar PDF`,
+			cancelButtonText: `Cancelar`,
 		}).then((result) => {
 			if (result.isConfirmed) {
-				salvaCartasBD();
-				montaPDF();
-			} else if (result.isDenied) {
 				montaPDF();
 			} else if (result.isDismissed) {
 				return;
@@ -394,34 +268,12 @@ function gerarPDF() {
 	}
 }
 
-// Listen para o envio de mensagem
+// Formulário de mensagem desativado
 $("#mensagem").on("submit", function (e) {
 	e.preventDefault();
-	if (!$("#mensagem-conteudo").val()){
-		Swal.fire({ 
-			icon: 'error',
-			title: 'E a mensagem?',
-			text: 'Você esqueceu de digitar a mensagem meu amor!'
-		});
-	} else {
-		var campoToast = $(".toast");
-		var toast = new bootstrap.Toast(campoToast)
-
-		let mensagem = $("#mensagem-conteudo").val();
-
-		$.post("server/mensagens.php", { tipo: "POST", mensagem: mensagem })
-			.done(function (data) {
-				//console.log(data);
-				$("#mensagem-conteudo").val("")
-				$(campoToast).addClass("bg-success")
-				$(".toast-body").text("Mensagem enviada com sucesso!")
-				toast.show();
-			})
-			.fail(function (e) {
-				$(campoToast).addClass("bg-danger")
-				$(".toast-body").text("Opa... não foi não! Tenta de novo")
-				toast.show()
-				//console.log(e);
-			});
-		}
+    Swal.fire({ 
+        icon: 'error',
+        title: 'Função desativada',
+        text: 'O formulário de mensagem não funciona no modo estático (sem servidor).'
+    });
 });
